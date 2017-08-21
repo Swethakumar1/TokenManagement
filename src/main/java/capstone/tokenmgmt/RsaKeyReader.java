@@ -1,10 +1,6 @@
 package capstone.tokenmgmt;
 
-import java.io.BufferedReader;
-import java.io.DataInputStream;
-import java.io.FileInputStream;
 import java.io.IOException;
-import java.io.InputStreamReader;
 import java.math.BigInteger;
 import java.security.Key;
 import java.security.KeyFactory;
@@ -26,28 +22,8 @@ public class RsaKeyReader {
 
 	public static Key readRSAKey(String privateKey)
 	{
-		// Reading from private key file associated with the device.
-		/*StringBuilder sb = new StringBuilder();
-		try
-		{
-			DataInputStream dis = new DataInputStream(new FileInputStream(privateKey));
-			BufferedReader br = new BufferedReader(new InputStreamReader(dis, "UTF-8"));
-			for (String line = br.readLine(); line != null; line = br.readLine()){
-				sb.append(line);
-			}
-		}
-		catch (IOException ex)
-		{
-			ex.printStackTrace();
-		}*/
-		
 		Key key = null;		
-		
-		// When reading from file.
-		// String rsaPrivateKey = getPrivateKey(sb.toString());
-
-		// When not reading from file.
-		 String rsaPrivateKey = getPrivateKey(privateKey);
+		String rsaPrivateKey = getPrivateKey(privateKey);
 		
 		// Generate RSA Key
 		try {
@@ -73,7 +49,6 @@ public class RsaKeyReader {
 		    KeyFactory kf = KeyFactory.getInstance("RSA");
 			key = kf.generatePrivate(spec);
 		} catch (IOException | NoSuchAlgorithmException | InvalidKeySpecException e1) {
-			// TODO Auto-generated catch block
 			e1.printStackTrace();
 		}
 		

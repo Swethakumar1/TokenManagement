@@ -10,7 +10,7 @@ public class App
 {
     public static void main( String[] args ) throws KeyStoreException
     {
-        AWSIoTConnection aws  = new AWSIoTConnection();
+        AWSIoTConnection aws  = new AWSIoTConnection(5);
         aws.Connect();     
     }
 }

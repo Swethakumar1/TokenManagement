@@ -8,11 +8,8 @@ package capstone.tokenmgmt;
 
 
 import java.io.BufferedReader;
-import java.io.BufferedWriter;
-import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileReader;
-import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
 import java.math.BigInteger;
@@ -23,40 +20,36 @@ import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.security.cert.Certificate;
 import java.security.cert.CertificateException;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.ArrayList;
 import java.util.Properties;
 import java.util.UUID;
 
 import com.amazonaws.auth.BasicAWSCredentials;
 import com.amazonaws.regions.Regions;
 import com.amazonaws.services.iot.AWSIotClient;
-import com.amazonaws.services.iot.client.AWSIotDevice;
 import com.amazonaws.services.iot.client.AWSIotException;
 import com.amazonaws.services.iot.client.AWSIotMqttClient;
 import com.amazonaws.services.iot.model.AttachPrincipalPolicyRequest;
 import com.amazonaws.services.iot.model.AttachThingPrincipalRequest;
-import com.amazonaws.services.iot.model.CreateKeysAndCertificateRequest;
-import com.amazonaws.services.iot.model.CreateKeysAndCertificateResult;
 import com.amazonaws.services.iot.model.CreatePolicyRequest;
 import com.amazonaws.services.iot.model.CreatePolicyResult;
 import com.amazonaws.services.iot.model.CreateThingRequest;
 import com.amazonaws.services.iot.model.CreateThingResult;
 import com.amazonaws.services.iot.model.GetPolicyRequest;
 import com.amazonaws.services.iot.model.GetPolicyResult;
-import com.amazonaws.services.iot.model.ResourceNotFoundException; 
+import com.amazonaws.services.iot.model.ResourceNotFoundException;
+
+import capstone.tokenmgmt.X509CertificateGenerator.AwsIotGeneratedCertificate; 
 
 public class AWSIoTConnection { 
-	private AWSIotMqttClient mqttclient;
-	private String clientId;
+	private ArrayList<AWSIotMqttClient> mqttclients;
+	private ArrayList<String> clientIds;
 	private final String policyName = "DevicePolicy";
 	private final String accessKey;
 	private final String secretKey;
 	private final String endPoint;
 	private final AWSIotClient awsIotClient;
-	private HashMap<String, String> deviceCertificateMap;
-	private final String deviceCertificate = "C:\\Users\\sweth\\Desktop\\TokenManagement-master\\src\\main\\java\\capstone\\tokenmgmt\\DeviceCertificateMap.txt";
-	public AWSIoTConnection()
+	public AWSIoTConnection(int numberOfDevices)
 	{	
 		Properties properties = new Properties();
 		try (InputStream is = new FileInputStream("C:\\Users\\sweth\\Desktop\\TokenManagement-master\\src\\main\\java\\capstone\\tokenmgmt\\config.properties")){
@@ -66,36 +59,41 @@ public class AWSIoTConnection {
 			ex.printStackTrace();
 		}
 		
+		clientIds = new ArrayList<String>(numberOfDevices);
+		mqttclients = new ArrayList<AWSIotMqttClient>(numberOfDevices);
+		for (int i = 0; i < numberOfDevices; i++){
+			clientIds.add(UUID.randomUUID().toString());
+		}
+			
 		accessKey = properties.getProperty("AccessKey");
 		secretKey = properties.getProperty("SecretKey");
 		endPoint = properties.getProperty("ClientEndPoint");
 		awsIotClient = new AWSIotClient(new BasicAWSCredentials(accessKey, secretKey)).withRegion(Regions.US_WEST_2);
-		clientId = UUID.randomUUID().toString();
-		
-		// TODO: Read from the Client Certificate mapping file & populate HashMap.
-		File file = new File(deviceCertificate);
-		if (file.exists())
-		{
-			 readDeviceCertificateFile();
-		}
-		else
-		{
-			deviceCertificateMap = new HashMap<String, String>();
-		}
 	}
 	
 	public void Connect()
 	{
-		CreateKeysAndCertificateRequest ckcr = new CreateKeysAndCertificateRequest().withSetAsActive(true);
-		CreateKeysAndCertificateResult keysAndCertificate = deviceCertificateMap.containsKey(clientId) 
-				? awsIotClient.createKeysAndCertificate(ckcr).withCertificateId(deviceCertificateMap.get(clientId))
-				: awsIotClient.createKeysAndCertificate(ckcr);
-		
-		if (!deviceCertificateMap.containsKey(clientId)){
-			deviceCertificateMap.put(clientId, keysAndCertificate.getCertificateId());
+		X509CertificateGenerator certificateGenerator = new X509CertificateGenerator(awsIotClient);
+		AwsIotGeneratedCertificate generatedCert = certificateGenerator.readCertificateContents();
+		if (generatedCert == null){
+			throw new SecurityException("Could not generate certificate from AWS IoT service.");
 		}
 		
-		AttachPrincipalPolicyRequest policyRequest = new AttachPrincipalPolicyRequest().withPrincipal(keysAndCertificate.getCertificateArn());				
+		// Generate X.509 certificate from PEM file associated with the device generated via AWS Console.
+		Certificate certificate = X509CertificateGenerator.generateCertificate(generatedCert.getCertificatePem()); 
+		if (certificate == null)
+		{
+			throw new SecurityException("Could not generate certificate to connect to AWS IoT service.");
+		}
+		
+		// Generate RSA private key from CertificateKeysAndResult AWS API
+		Key key = RsaKeyReader.readRSAKey(generatedCert.getPrivateKey());
+		if (key == null)
+		{
+			throw new SecurityException("Could not generate certificate to connect to AWS IoT service.");
+		}
+				
+		AttachPrincipalPolicyRequest policyRequest = new AttachPrincipalPolicyRequest().withPrincipal(generatedCert.getCertificateArn());				
 		GetPolicyResult policyResult = null;
 		try{
 			policyResult = awsIotClient.getPolicy(new GetPolicyRequest().withPolicyName(policyName));
@@ -114,28 +112,17 @@ public class AWSIoTConnection {
 			policyRequest.setPolicyName(policyResult.getPolicyName());
 		}
 		
-		
-		CreateThingResult thingResult = awsIotClient.createThing(new CreateThingRequest()
-				.withThingName(clientId));
-		
 		awsIotClient.attachPrincipalPolicy(policyRequest);		
-		awsIotClient.attachThingPrincipal(new AttachThingPrincipalRequest()
-				.withPrincipal(keysAndCertificate.getCertificateArn())
-				.withThingName(thingResult.getThingName()));
-		
-		// Generate X.509 certificate from PEM file associated with the device generated via AWS Console.
-		Certificate certificate = X509CertificateGenerator.generateCertificate(keysAndCertificate.getCertificatePem()); 
-		if (certificate == null)
-		{
-			throw new SecurityException("Could not generate certificate to connect to AWS IoT service.");
+
+		for (int i = 0; i < clientIds.size(); i++){
+			CreateThingResult thingResult = awsIotClient.createThing(new CreateThingRequest()
+					.withThingName(clientIds.get(i)));
+			
+			awsIotClient.attachThingPrincipal(new AttachThingPrincipalRequest()
+					.withPrincipal(generatedCert.getCertificateArn())
+					.withThingName(thingResult.getThingName()));
 		}
 		
-		// Generate RSA private key from CertificateKeysAndResult AWS API
-		Key key = RsaKeyReader.readRSAKey(keysAndCertificate.getKeyPair().getPrivateKey());
-		if (key == null)
-		{
-			throw new SecurityException("Could not generate certificate to connect to AWS IoT service.");
-		}
 		
 		try {
 			// Generate KeyStore
@@ -145,52 +132,17 @@ public class AWSIoTConnection {
 			ks.setCertificateEntry("alias", certificate);
 			ks.setKeyEntry("alias", key, password.toCharArray(), new Certificate[] { certificate });
 
-			this.mqttclient = new AWSIotMqttClient(endPoint, this.clientId, ks, password);
-
-			// Attach a device to MQTT client.
-			AWSIotDevice device = new AWSIotDevice("Device-2"); 
-			this.mqttclient.attach(device);
-			this.mqttclient.connect();
-			
-			
+			for (int i = 0; i < clientIds.size(); i++){
+				this.mqttclients.add(new AWSIotMqttClient(endPoint, this.clientIds.get(i), ks, password));
+				this.mqttclients.get(i).connect();
+			}	
 			
 			// Write DeviceCertificateMap to file
-			writeToDeviceCertificateFile();
 		} catch (KeyStoreException | NoSuchAlgorithmException | CertificateException | IOException | AWSIotException e) {
 			e.printStackTrace();
 		} 
 	}    
 			
-	private void readDeviceCertificateFile()
-	{
-		try (BufferedReader br= new BufferedReader(new FileReader(this.deviceCertificate))){
-			for (String line = br.readLine(); line != null; line = br.readLine())
-			{
-				String[] data=line.split(","); 
-				this.deviceCertificateMap.put(data[0],data[1]); 	
-			}
-		} catch (IOException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		} 		
-	}
-	
-	private void writeToDeviceCertificateFile()
-	{
-		StringBuilder sb = new StringBuilder();
-		for(Map.Entry<String,String> entry: this.deviceCertificateMap.entrySet())
-		{
-			sb.append(entry.getKey() + "," + entry.getValue() + "\n" );
-		}
-		try (BufferedWriter bw = new BufferedWriter(new FileWriter(this.deviceCertificate, true)))
-		{
-			bw.write(sb.toString());	
-		} catch (IOException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
-	}	
-	
 	private String readPolicy(){
 		StringBuilder sb = new StringBuilder();
 		try (BufferedReader br= new BufferedReader(new FileReader("C:\\Users\\sweth\\Desktop\\TokenManagement-master\\src\\main\\java\\capstone\\tokenmgmt\\policy.txt"))){

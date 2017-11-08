@@ -16,7 +16,7 @@ public class PolicyManagement {
 	private final String clientArn = "arn:aws:iot:us-west-2:765789663805:";
 	private final String[] actionEffect;
 	private final String[] actions;
-	private Gson gson;
+	private Gson gson; // to serialize json. 
 	
 	public PolicyManagement(){
 		gson = new Gson();
@@ -24,7 +24,7 @@ public class PolicyManagement {
 		actions = new String[]{"iot:Connect", "iot:Publish", "iot:Subscribe", "iot:Receive"};
 	}
 	
-	public String genereateDefaultPolicy(String action){
+	public String generateDefaultPolicy(String action){
 		List<String> resources = new ArrayList<String>();
 		resources.add("*");
 		PolicyStatement ps1 = new PolicyStatement(actionEffect[0], action, resources);
@@ -130,7 +130,7 @@ public class PolicyManagement {
 			for (Iterator<Device> iterator = devices.iterator(); iterator.hasNext();){
 				Device device = (Device)iterator.next();
 				if (set.contains(clientArn+spl+device.getDeviceId())){
-					System.out.println("Device: " + device.getDeviceId() + " not connected.");
+					//System.out.println("Device: " + device.getDeviceId() + " not connected.");
 					iterator.remove();
 				}
 			}

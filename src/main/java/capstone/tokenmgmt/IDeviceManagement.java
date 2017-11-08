@@ -2,12 +2,14 @@ package capstone.tokenmgmt;
 
 import java.util.List;
 
-public interface IDeviceManagement {
+public interface IDeviceManagement{
 	public void connectDevicesInGroups(List<Integer> devicesPerGroup);
 	
 	public void connectDevicesWithExistingCertificate(String certificateId, int numberOfDevices);
 	
 	public void connectDevice(String deviceId);
+	
+	public void connectDeviceToCertificate(String deviceId, String certificateId);
 		
 	public void reconnectAllDevicesWithExistingCertificate(String certificateId);
 	
@@ -38,5 +40,9 @@ public interface IDeviceManagement {
 	public void deleteDevices(String certificateId);
 	
 	public void disconnectAllDevices();
+	
+	public String getDeviceId();
+	
+	public void getCertificateIdAndArnForConnectedDevice(String deviceId);
 }
 
